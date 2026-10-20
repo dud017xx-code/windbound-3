@@ -8,7 +8,26 @@ function roomEndpoint(){
 export class DuelLink{
  constructor(onPacket,onStatus){this.onPacket=onPacket;this.onStatus=onStatus;this.seq=0;this.remoteSeq=-1;this.epoch=0;this.closed=false;this.latest=null;this.lastPeer=0;this.channel=null;this.pc=null;}
  async api(action,extra={}){const r=await fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,code:this.code,token:this.token,...extra}),signal:AbortSignal.timeout(8000)});if(!(r.headers.get('content-type')||'').includes('application/json')){const e=new Error('房间服务暂时无法访问，请检查服务地址、网络和部署状态。');e.status=r.status;throw e;}const b=await r.json();if(!r.ok){const e=new Error(b.error||'连接失败，请重试。');e.status=r.status;throw e;}return b;}
- async open(code){const epoch=this.epoch;const b=await this.api(code?'join':'create',code?{code}:{});if(this.closed||epoch!==this.epoch)return;this.code=b.code;this.token=b.token;this.seat=b.seat;this.lastPeer=performance.now();this.started=performance.now();this.onStatus('room',b);this.peer();if(this.seat===0&&this.pc){this.attach(this.pc.createDataChannel('wind-duel',{ordered:false,maxRetransmits:0}));await this.pc.setLocalDescription(await this.pc.createOffer());await this.gather();if(!this.closed)await this.api('signal',{sdp:JSON.stringify(this.pc.localDescription)});}else if(b.offer)await this.answer(b.offer);if(!this.closed)this.loop();}
+ async open(code){const epoch=this.epoch;const b=await this.api(code?'join':'create',code?{code}:{});if(this.closed||epoch!==this.epoch)return;await this.connect(b);}
+ async connect(b){if(this.closed)return;this.matching=false;this.code=b.code;this.token=b.token;this.seat=b.seat;this.lastPeer=performance.now();this.started=performance.now();this.onStatus('room',b);this.peer();if(this.seat===0&&this.pc){this.attach(this.pc.createDataChannel('wind-duel',{ordered:false,maxRetransmits:0}));await this.pc.setLocalDescription(await this.pc.createOffer());await this.gather();if(!this.closed)await this.api('signal',{sdp:JSON.stringify(this.pc.localDescription)});}else if(b.offer)await this.answer(b.offer);if(!this.closed)this.loop();}
+ async match(){
+  this.matchTicket=crypto.randomUUID()+crypto.randomUUID();this.matching=true;const start=performance.now();let action='match_start',failures=0;
+  while(!this.closed&&this.matching){
+   let b;
+   try{b=await this.api(action,{ticket:this.matchTicket});failures=0;}catch(error){
+    if(this.closed)return;
+    if(error.status===400||error.status===404||error.status===405)throw new Error('匹配服务尚未更新，请先部署匹配版房间服务。');
+    if(++failures>=3)throw new Error('匹配连接中断，请检查网络后重新匹配。');
+    this.onStatus('match-retry');
+   }
+   if(this.closed)return;
+   if(b?.status==='matched'){await this.connect({...b,token:this.matchTicket});return;}
+   if(b?.status==='cancelled')throw new Error(b.message||'匹配已取消，请重新匹配。');
+   if(b){if(b.status!=='waiting')throw new Error('匹配服务返回异常，请稍后重试。');action='match_poll';this.onStatus('match-waiting');}
+   if(performance.now()-start>120000)throw new Error('暂时没有找到对手，可以再次点击匹配。');
+   await new Promise(resolve=>{this.matchWake=resolve;this.matchTimeout=setTimeout(resolve,2500);});this.matchWake=null;
+  }
+ }
  peer(){try{this.pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.cloudflare.com:3478','stun:stun.l.google.com:19302']}]});this.pc.ondatachannel=e=>this.attach(e.channel);this.pc.onconnectionstatechange=()=>{if(this.pc.connectionState==='failed'||this.pc.connectionState==='disconnected')this.relay();};}catch{this.pc=null;this.onStatus('relay');}}
  gather(){if(this.pc.iceGatheringState==='complete')return Promise.resolve();return new Promise(resolve=>{const p=this.pc;const done=()=>{clearTimeout(timer);p.removeEventListener('icegatheringstatechange',change);resolve();};const change=()=>{if(p.iceGatheringState==='complete')done();};const timer=setTimeout(done,3000);p.addEventListener('icegatheringstatechange',change);});}
  async answer(offer){if(!this.pc||this.pc.remoteDescription)return;await this.pc.setRemoteDescription(JSON.parse(offer));await this.pc.setLocalDescription(await this.pc.createAnswer());await this.gather();if(!this.closed)await this.api('signal',{sdp:JSON.stringify(this.pc.localDescription)});}
@@ -29,5 +48,6 @@ export class DuelLink{
   const wait=this.wakeRequested?0:this.channel?.readyState==='open'&&performance.now()-this.lastPeer<1500?10000:this.joined?150:700;this.wakeRequested=false;
   if(!this.closed)this.timeout=setTimeout(()=>this.loop(),wait);
  }
- close(){if(this.closed)return;this.closed=true;this.epoch++;clearTimeout(this.timeout);if(this.token)fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'leave',code:this.code,token:this.token}),keepalive:true}).catch(()=>{});this.channel?.close();this.pc?.close();}
+ close(){if(this.closed)return;this.closed=true;this.epoch++;clearTimeout(this.timeout);clearTimeout(this.matchTimeout);this.matchWake?.();const pending=this.matching&&this.matchTicket;this.matching=false;const body=pending?{action:'match_cancel',ticket:this.matchTicket}:this.token?{action:'leave',code:this.code,token:this.token}:null;if(body)fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true}).catch(()=>{});this.channel?.close();this.pc?.close();}
 }
+
