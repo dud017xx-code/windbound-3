@@ -6,11 +6,18 @@ function roomEndpoint(){
  return new URL('/api/duel',url).href;
 }
 export class DuelLink{
- constructor(onPacket,onStatus){this.onPacket=onPacket;this.onStatus=onStatus;this.seq=0;this.remoteSeq=-1;this.epoch=0;this.closed=false;this.latest=null;this.lastPeer=0;this.channel=null;this.pc=null;}
- async api(action,extra={}){const r=await fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,code:this.code,token:this.token,...extra}),signal:AbortSignal.timeout(8000)});if(!(r.headers.get('content-type')||'').includes('application/json')){const e=new Error('房间服务暂时无法访问，请检查服务地址、网络和部署状态。');e.status=r.status;throw e;}const b=await r.json();if(!r.ok){const e=new Error(b.error||'连接失败，请重试。');e.status=r.status;throw e;}return b;}
- async open(code){const epoch=this.epoch;const b=await this.api(code?'join':'create',code?{code}:{});if(this.closed||epoch!==this.epoch)return;await this.connect(b);}
+ constructor(onPacket,onStatus,mode='duel'){this.mode=mode;this.onPacket=onPacket;this.onStatus=onStatus;this.seq=0;this.remoteSeq=-1;this.epoch=0;this.closed=false;this.latest=null;this.lastPeer=0;this.channel=null;this.pc=null;}
+ async api(action,extra={}){const r=await fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,mode:this.mode,code:this.code,token:this.token,...extra}),signal:AbortSignal.timeout(8000)});if(!(r.headers.get('content-type')||'').includes('application/json')){const e=new Error('房间服务暂时无法访问，请检查服务地址、网络和部署状态。');e.status=r.status;throw e;}const b=await r.json();if(!r.ok){const e=new Error(b.error||'连接失败，请重试。');e.status=r.status;throw e;}return b;}
+ async open(code){await this.checkMode();if(this.closed)return;const epoch=this.epoch;const b=await this.api(code?'join':'create',code?{code}:{});if(this.closed||epoch!==this.epoch)return;await this.connect(b);}
+ async checkMode(){
+  if(this.mode!=='hide')return;
+  const response=await fetch(new URL('/api/health',roomEndpoint()),{cache:'no-store',signal:AbortSignal.timeout(8000)});
+  let status;try{status=await response.json();}catch{throw new Error('房间服务暂时无法访问，请检查网络。');}
+  if(!response.ok||status.hide!==true)throw new Error('捉迷藏服务尚未更新，请先部署捉迷藏版房间后台。');
+ }
  async connect(b){if(this.closed)return;this.matching=false;this.code=b.code;this.token=b.token;this.seat=b.seat;this.lastPeer=performance.now();this.started=performance.now();this.onStatus('room',b);this.peer();if(this.seat===0&&this.pc){this.attach(this.pc.createDataChannel('wind-duel',{ordered:false,maxRetransmits:0}));await this.pc.setLocalDescription(await this.pc.createOffer());await this.gather();if(!this.closed)await this.api('signal',{sdp:JSON.stringify(this.pc.localDescription)});}else if(b.offer)await this.answer(b.offer);if(!this.closed)this.loop();}
  async match(){
+  await this.checkMode();if(this.closed)return;
   this.matchTicket=crypto.randomUUID()+crypto.randomUUID();this.matching=true;const start=performance.now();let action='match_start',failures=0;
   while(!this.closed&&this.matching){
    let b;
@@ -48,6 +55,7 @@ export class DuelLink{
   const wait=this.wakeRequested?0:this.channel?.readyState==='open'&&performance.now()-this.lastPeer<1500?10000:this.joined?150:700;this.wakeRequested=false;
   if(!this.closed)this.timeout=setTimeout(()=>this.loop(),wait);
  }
- close(){if(this.closed)return;this.closed=true;this.epoch++;clearTimeout(this.timeout);clearTimeout(this.matchTimeout);this.matchWake?.();const pending=this.matching&&this.matchTicket;this.matching=false;const body=pending?{action:'match_cancel',ticket:this.matchTicket}:this.token?{action:'leave',code:this.code,token:this.token}:null;if(body)fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true}).catch(()=>{});this.channel?.close();this.pc?.close();}
+ close(){if(this.closed)return;this.closed=true;this.epoch++;clearTimeout(this.timeout);clearTimeout(this.matchTimeout);this.matchWake?.();const pending=this.matching&&this.matchTicket;this.matching=false;const body=pending?{action:'match_cancel',mode:this.mode,ticket:this.matchTicket}:this.token?{action:'leave',mode:this.mode,code:this.code,token:this.token}:null;if(body)fetch(roomEndpoint(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true}).catch(()=>{});this.channel?.close();this.pc?.close();}
 }
+
 
