@@ -32,6 +32,8 @@ function move(p,input,seeker,dt){p.yaw=input.yaw;if(!seeker){p.kind=input.kind;p
  p.vy-=18*dt;p.y=Math.max(0,p.y+p.vy*dt);if(p.y<=0)p.vy=0;
  if(input.jump>p.seen.jump&&p.y<=0){p.vy=seeker?6.6:4.8;p.seen.jump=input.jump;}
 }
+export function canHideStand(x,z,seeker){return !collides(x,z,0,seeker?.38:.80);}
+export function advanceHidePlayer(p,raw,seeker,phase,dt){const c=normalizeHideInput(raw);let escaped=false;for(const k of ['dash','inv','shotCool','regenDelay','reveal','trail'])p[k]=Math.max(0,p[k]-dt);if(p.regenDelay===0)p.energy=Math.min(100,p.energy+9*dt);if(phase==='prepare'&&seeker){p.moving=false;p.seen.fire=c.fire;p.seen.escape=c.escape;p.seen.jump=c.jump;return false;}if(!seeker&&phase==='hunt'&&c.escape>p.seen.escape){p.seen.escape=c.escape;if(p.escape>0){p.escape--;p.dash=.30;p.inv=.27;escaped=true;}}move(p,c,seeker,dt);return escaped;}
 function fire(s,c){const hunter=s.players[s.seeker],hider=s.players[1-s.seeker];if(c.fire<=hunter.seen.fire)return;hunter.seen.fire=c.fire;if(hunter.shotCool>0||hunter.energy<6)return;hunter.energy-=6;hunter.shotCool=.62;hunter.regenDelay=.8;const o={x:hunter.x+Math.sin(hunter.yaw)*.48,y:hunter.y+1.25,z:hunter.z+Math.cos(hunter.yaw)*.48},v={x:c.ax,y:c.ay,z:c.az};const wall=rayObstacle(o,v),shape=PROP_TYPES[hider.kind],target=boxHit(o,v,hider.x,hider.z,shape.radius,shape.radius,hider.y,hider.y+shape.height),hit=target<wall&&target<45;let distance=hit?target:wall;
  if(hit){if(hider.inv<=0){hider.hp=Math.max(0,hider.hp-50);hider.inv=.35;hider.reveal=1.2;event(s,'hit',{player:1-s.seeker,x:hider.x,y:hider.y,z:hider.z});if(hider.hp===0)finishRound(s,s.seeker,'caught');}}
  else{for(const p of SCENE_PROPS){const d=PROP_TYPES[p.kind],at=boxHit(o,v,p.x,p.z,d.radius,d.radius,0,d.height);if(Math.abs(at-wall)<.01){hunter.energy=Math.max(0,hunter.energy-12);event(s,'wrong');break;}}}
@@ -41,10 +43,7 @@ export function stepHide(s,controls,dt){dt=clamp(dt,0,.05);s.t+=dt;const input=c
  if(s.phase==='lobby'){for(let i=0;i<2;i++)if(input[i].ready>s.players[i].seen.ready){s.players[i].ready=!s.players[i].ready;s.players[i].seen.ready=input[i].ready;}if(s.players.every(x=>x.ready))beginRound(s);return;}
  if(s.phase==='finished'){for(let i=0;i<2;i++)if(input[i].rematch>s.players[i].seen.rematch){s.rematch[i]=true;s.players[i].seen.rematch=input[i].rematch;}if(s.rematch.every(Boolean)){s.set++;s.round=1;s.scores=[0,0];s.rematch=[false,false];beginRound(s);}return;}
  if(s.phase==='roundEnd'){s.timer-=dt;if(s.timer<=0){s.round++;beginRound(s);}return;}
- for(let i=0;i<2;i++){const p=s.players[i];for(const k of ['dash','inv','shotCool','regenDelay','reveal','trail'])p[k]=Math.max(0,p[k]-dt);if(p.regenDelay===0)p.energy=Math.min(100,p.energy+9*dt);const seeker=i===s.seeker;
-  if(s.phase==='prepare'&&seeker){p.moving=false;p.seen.fire=input[i].fire;p.seen.escape=input[i].escape;p.seen.jump=input[i].jump;continue;}
-  if(!seeker&&s.phase==='hunt'&&input[i].escape>p.seen.escape){p.seen.escape=input[i].escape;if(p.escape>0){p.escape--;p.dash=.30;p.inv=.27;event(s,'escape',{x:p.x,z:p.z});}}
-  move(p,input[i],seeker,dt);if(!seeker&&p.moving&&s.phase==='hunt'&&p.trail===0){p.trail=.23;event(s,'trail',{x:p.x,y:p.y,z:p.z});}
+ for(let i=0;i<2;i++){const p=s.players[i],seeker=i===s.seeker,escaped=advanceHidePlayer(p,input[i],seeker,s.phase,dt);if(escaped)event(s,'escape',{x:p.x,z:p.z});if(!seeker&&p.moving&&s.phase==='hunt'&&p.trail===0){p.trail=.23;event(s,'trail',{x:p.x,y:p.y,z:p.z});}
  }
  if(s.phase==='hunt')fire(s,input[s.seeker]);if(s.phase!=='hunt'&&s.phase!=='prepare')return;s.timer-=dt;
  if(s.phase==='prepare'&&s.timer<=0){s.phase='hunt';s.timer=180;event(s,'hunt');}

@@ -2,7 +2,7 @@ import * as T from './vendor/three.module.js';
 import {configureArt,createTraveler,updateTraveler} from './art.js';
 import {dressDuelist} from './duel-skins.js';
 import {createMatch,step,blankInput,normalizeInput,BLOCKS} from './duel-core.js';
-import {DuelLink} from './duel-net.js?v=hide-v1';
+import {DuelLink} from './duel-net.js?v=smooth-v1';
 const $=s=>document.querySelector(s),show=(s,v)=>$(s).classList.toggle('hidden',!v),V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),mobile=matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>1;
 document.body.classList.toggle('mobile',mobile);
 let link=null,seat=0,model=createMatch(),local=blankInput(),remote=blankInput(),remoteAt=0,lastState=-1,joined=false,connected=false,stopped=false,inGame=false,first=false,locked=true,menu=false,chargeStart=0,charging=false,lastEvent=0,noticeUntil=0,roomGeneration=0,peerName='朋友',myName='银烬',skin={},peerSkin={},peerReady=false,lastPacket=0,latency=0,lastSnapshot=0;
