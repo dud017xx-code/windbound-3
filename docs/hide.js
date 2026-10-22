@@ -1,7 +1,7 @@
-import {createHideGame,blankHideInput,normalizeHideInput,stepHide,PROP_TYPES} from './hide-core.js?v=smooth-v1';
-import {DuelLink} from './duel-net.js?v=smooth-v1';
-import {HideMotion,HideInputQueue} from './hide-motion.js?v=smooth-v1';
-import {createHideArt} from './hide-art.js?v=smooth-v1';
+import {createHideGame,blankHideInput,normalizeHideInput,stepHide,PROP_TYPES} from './hide-core.js?v=latency-v1';
+import {DuelLink} from './duel-net.js?v=latency-v1';
+import {HideMotion,HideInputQueue} from './hide-motion.js?v=latency-v1';
+import {createHideArt} from './hide-art.js?v=latency-v1';
 const elements=new Map(),$=s=>{if(!elements.has(s))elements.set(s,document.querySelector(s));return elements.get(s);},show=(s,on)=>$(s).classList.toggle('hidden',!on),mobile=matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>1;
 document.body.classList.toggle('mobile',mobile);
 let art;try{art=createHideArt($('#world'),mobile);}catch(error){show('#fatal',true);console.error(error);}
@@ -63,13 +63,13 @@ function frame(now){requestAnimationFrame(frame);const raw=(now-lastFrame)/1000,
  if(link&&!matching&&!stopped&&link.code&&(now-lastSend>50||urgentSend)){lastSend=now;urgentSend=false;link.send({revision:2,kind:seat===0?'hide-state':'hide-input',seq:++local.seq,input:{...local},state:seat===0?structuredClone(model):undefined,moveAck:seat===0?inputQueue.ack:undefined,...(seat===1?motion.outgoing():{}),name:myName});}
  if(link&&joined&&!stopped&&peerAt&&now-peerAt>22000)fail('对方暂时失去连接，请重新进入房间。');
  for(const e of model.events){if(e.id<=lastEvent)continue;lastEvent=e.id;if(e.kind==='bell')bell(e);if(e.kind==='wrong'&&seat===model.seeker)notice('这是普通摆件 · 额外消耗 12 能量',1.5);if(e.kind==='hit')notice(seat===model.seeker?'命中伪装！':'被发现了！快换个位置。',1.5);art.effect(e);}
- if(now-lastUI>100||model.phase!==observedPhase){lastUI=now;observedPhase=model.phase;renderUI();$('#quality').textContent='画质：'+art.quality.label;$('#connection').textContent='● '+transport+(link?.rtt?' · '+Math.round(link.rtt)+' ms':'')+' · '+art.quality.fps+' 帧';}
+ if(now-lastUI>100||model.phase!==observedPhase){lastUI=now;observedPhase=model.phase;renderUI();$('#quality').textContent='画质：'+art.quality.label;$('#network-detail').textContent=link?'连接：'+(transport==='中继连接'&&link.fastSync?'快速中继':transport)+'\n网络往返：'+Math.round(link.networkMs||link.rtt||0)+' ms · 游戏同步：'+Math.round(link.rtt||0)+' ms\n后台：'+(link.fastSync?'快速同步':'兼容同步'):'';$('#connection').textContent='● '+(transport==='中继连接'&&link?.fastSync?'快速中继':transport)+((link?.networkMs||link?.rtt)?' · '+Math.round(link.networkMs||link.rtt)+' ms':'')+' · '+art.quality.fps+' 帧';}
  const blind=link&&!stopped&&model.phase==='prepare'&&seat===model.seeker;
  if(!blind&&!document.hidden){presentation=motion.view(model,seat,elapsed,seat===1&&!!link&&!stopped);const started=performance.now();art.update(presentation,seat,yaw,pitch,first,elapsed,!link||model.phase==='lobby');art.quality.sample(raw,!!link&&['prepare','hunt'].includes(model.phase));frameSamples.push(performance.now()-started);if(frameSamples.length>180)frameSamples.shift();}
 }
 $('#quality').onclick=()=>{art?.quality.cycle();lastUI=0;};
 if(art)requestAnimationFrame(frame);
-window.__hide={getState:()=>({model:structuredClone(model),seat,code:link?.code,joined,matching,automatic,stopped,peerName,transport,local:{...local},presentation:presentation?structuredClone(presentation):null,performance:{...stats,fps:art?.quality.fps,quality:art?.quality.label,pixelRatio:art?.renderer.getPixelRatio(),drawCalls:art?.renderer.info.render.calls,batching:art?.batching,renderMs:frameSamples.length?frameSamples.reduce((a,b)=>a+b,0)/frameSamples.length:0,rtt:link?.rtt||0,pendingMoves:motion.pending.length}})};
+window.__hide={getState:()=>({model:structuredClone(model),seat,code:link?.code,joined,matching,automatic,stopped,peerName,transport,local:{...local},presentation:presentation?structuredClone(presentation):null,performance:{...stats,fps:art?.quality.fps,quality:art?.quality.label,pixelRatio:art?.renderer.getPixelRatio(),drawCalls:art?.renderer.info.render.calls,batching:art?.batching,renderMs:frameSamples.length?frameSamples.reduce((a,b)=>a+b,0)/frameSamples.length:0,rtt:link?.rtt||0,requestMs:link?.requestMs||0,serverMs:link?.serverMs||0,fastSync:link?.fastSync===true,directMs:link?.directMs||0,relayMs:link?.relayMs||0,networkMs:link?.networkMs||0,routeChoice:link?.routeChoice||'auto',pendingMoves:motion.pending.length}})};
 if(new URLSearchParams(location.search).has('qa'))Object.assign(window.__hide,{
  pose:(i,x,z,y=0)=>{Object.assign(model.players[i],{x,z,y,vy:0});},timer:n=>model.timer=n,phase:v=>model.phase=v,
  aimAtHider:()=>{const a=model.players[model.seeker],b=model.players[1-model.seeker];yaw=Math.atan2(b.x-a.x,b.z-a.z);local.yaw=yaw;a.yaw=yaw;const dx=b.x-a.x-Math.sin(yaw)*.48,dz=b.z-a.z-Math.cos(yaw)*.48,dy=b.y+PROP_TYPES[b.kind].height*.55-a.y-1.25,n=Math.hypot(dx,dy,dz);qaAim={x:dx/n,y:dy/n,z:dz/n};},
