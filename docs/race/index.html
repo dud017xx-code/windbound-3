@@ -4,21 +4,23 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#c7e9ee"><title>逐风跃岛 · SKYSTRIDE</title>
   <meta name="description" content="跳过云海，借风争先。在浮空群岛上冲刺跑酷，用八种奇幻道具争夺冠军。支持键鼠和手机操作。">
-  <link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./online.css"><link rel="stylesheet" href="./layout-fixes.css">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./online.css"><link rel="stylesheet" href="./layout-fixes.css"><link rel="stylesheet" href="./workshop-game.css?v=workshop-v1">
 </head>
 <body>
   <canvas id="world" aria-label="逐风跃岛 3D 竞速赛道"></canvas>
   <div id="boot"><span class="wind-mark">✧</span><b>正在唤醒群岛</b><span id="boot-note">铺开云海与赛道…</span></div>
   <header id="header">
     <a class="brand" href="./" aria-label="逐风跃岛首页"><span class="brand-symbol">✧</span><span><strong>逐风跃岛</strong><small>SKYSTRIDE / RALLY</small></span></a>
-    <nav><a class="edition" href="../">← 返回风屿纪</a><button id="sound" class="icon-btn" aria-label="开启声音" title="声音">♪<i></i></button><button id="settings" class="icon-btn" aria-label="设置" title="设置">⚙</button></nav>
+    <nav><a id="return-editor" class="return-editor hidden" href="./workshop.html">← 返回工坊</a><a class="edition" href="../">← 返回风屿纪</a><button id="sound" class="icon-btn" aria-label="开启声音" title="声音">♪<i></i></button><button id="settings" class="icon-btn" aria-label="设置" title="设置">⚙</button></nav>
   </header>
   <main id="lobby" class="screen">
     <div class="hero-copy"><div class="eyebrow"><span></span> FOLLOW THE WIND, FIND YOUR WAY</div><h1>借一阵风，<br>跃向<span>第一。</span></h1><p class="hero-text">跑过云端，跳进未知。<br>一条近道、一个道具，都可能改写终点。</p><div class="hero-tags"><span>3D 跑酷竞速</span><span>8 种奇幻道具</span><span>电脑 / 手机</span></div>
-    <div class="start-card"><div class="course-top"><span class="course-num">01</span><div><b>浮光环岛</b><small>风车庭院 → 跃风峡谷 → 云顶花园</small></div><span class="course-weather">☀<small>顺风 · 宜冒险</small></span></div><div class="course-meta"><span>2 圈赛程</span><span>你 + 1 名电脑选手</span><button id="difficulty">难度：轻快 <span>⌄</span></button></div><button id="start" class="primary"><span>踏上赛道</span><b>↗</b></button></div>
+    <div class="start-card"><div class="course-top"><span class="course-num">01</span><div><b id="course-name">浮光环岛</b><small id="course-route">风车庭院 → 跃风峡谷 → 云顶花园</small></div><span class="course-weather">☀<small>顺风 · 宜冒险</small></span></div><div class="course-meta"><span id="course-laps">2 圈赛程</span><span>你 + 1 名电脑选手</span><button id="difficulty">难度：轻快 <span>⌄</span></button></div><button id="start" class="primary"><span>踏上赛道</span><b>↗</b></button></div>
     <div class="online-entry"><button id="online"><span>◉</span> 与朋友单挑 <small>电脑 ↔ 手机</small><b>↗</b></button></div>
+    <div class="creator-entry"><a id="workshop-entry" href="./workshop.html"><b>⌁</b><span>地图工坊<small>设计你自己的赛道</small></span><em>↗</em></a><button id="import-course">导入地图 ↥</button></div>
+    <div id="shared-map-note" class="shared-map-note hidden"><span id="shared-map-name"></span><button id="reset-course">恢复原版赛道</button></div>
     <div class="hero-bottom"><button id="howto">操作指南 <span>↗</span></button><button id="codex">道具图鉴 <span>↗</span></button><span id="best">每次出发，都有新的可能</span></div></div>
-    <div class="scene-label"><span class="label-line"></span><small>THE FLOATING ARCHIPELAGO</small><b>浮光环岛</b><span>沿着风的方向，跑出自己的路线。</span></div>
+    <div class="scene-label"><span class="label-line"></span><small>THE FLOATING ARCHIPELAGO</small><b id="scene-name">浮光环岛</b><span>沿着风的方向，跑出自己的路线。</span></div>
     <div class="lobby-footer"><span>跑跳有技巧 · 道具有妙招</span><span>1 对 1 竞速 · 挑战电脑 / 好友联机</span><span>向云端出发 <b>↓</b></span></div>
   </main>
   <section id="hud" class="screen hidden" aria-label="比赛信息">
@@ -29,7 +31,8 @@
     <div id="touch-controls"><div id="joystick" aria-label="移动摇杆"><span id="stick"></span><small>移动</small></div><div class="touch-actions"><button id="touch-dash" aria-label="冲刺">↗<small>冲刺</small></button><button id="touch-jump" aria-label="跳跃">↑<small>跳跃 ×2</small></button></div></div>
     <div id="key-hints">WASD 移动 <i>·</i> 空格 二段跳 <i>·</i> Shift 空中冲刺 <i>·</i> Q / E 使用道具 <i>·</i> Esc 暂停</div>
   </section>
-  <section id="results" class="screen hidden"><div class="result-card"><div class="eyebrow">THE WIND REMEMBERS YOUR NAME</div><div class="medal">✦</div><h2 id="result-title">冲过终点！</h2><p id="result-sub">每一次起跳，都让你离风更近。</p><div class="result-stats"><div><small>最终名次</small><b id="final-place">1 / 2</b></div><div><small>完赛用时</small><b id="final-time">01:30</b></div><div><small>收集风晶</small><b id="final-crystals">0</b></div></div><div id="result-ranking"></div><button id="again" class="primary">再追一次风 <b>↗</b></button><button id="back" class="text-btn">返回群岛</button></div></section>
+  <section id="results" class="screen hidden"><div class="result-card"><div class="eyebrow">THE WIND REMEMBERS YOUR NAME</div><div class="medal">✦</div><h2 id="result-title">冲过终点！</h2><p id="result-sub">每一次起跳，都让你离风更近。</p><div class="result-stats"><div><small>最终名次</small><b id="final-place">1 / 2</b></div><div><small>完赛用时</small><b id="final-time">01:30</b></div><div><small>收集风晶</small><b id="final-crystals">0</b></div></div><div id="result-ranking"></div><button id="again" class="primary">再追一次风 <b>↗</b></button><button id="back" class="text-btn">返回群岛</button><a id="result-editor" class="text-btn hidden result-editor" href="./workshop.html">返回工坊，继续编辑 ↗</a></div></section>
   <div id="modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-card"><button id="close-modal" class="close" aria-label="关闭">×</button><div class="eyebrow">SKYSTRIDE / FIELD NOTES</div><h2 id="modal-title"></h2><div id="modal-body"></div></div></div>
-  <script src="./online-config.js"></script><script type="module" src="./game.js"></script>
+  <input type="file" id="course-file" accept=".json,.skystride.json,application/json" hidden>
+  <script src="./online-config.js"></script><script type="module" src="./game.js?v=workshop-v1"></script>
 </body></html>

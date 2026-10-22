@@ -1,3 +1,4 @@
+import {BUILTIN_MAP,normalizeMap,mapFingerprint} from './map-schema.js?v=workshop-v1';
 export const ITEMS = [
  {id:'wind',icon:'↗',name:'疾风瓶',type:'加速',desc:'乘风加速 3 秒。起跳后使用，也能飞越更远的断桥。'},
  {id:'shield',icon:'◈',name:'星环盾',type:'防御',desc:'持续 6 秒，抵挡一次对手攻击或陷阱。'},
@@ -14,10 +15,10 @@ export const OBSTACLES = [.125,.465,.695,.87];
 export const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 export const fraction=(r,s)=>((s/r.length)%1+1)%1;
 export const near=(a,b,length)=>{let d=a-b;while(d>length/2)d-=length;while(d< -length/2)d+=length;return d;};
-export function supported(r,s,lane){const f=fraction(r,s);if(Math.abs(lane)>4.65)return false;if(GAPS.some(([a,b])=>f>a&&f<b))return false;if(f>.315&&f<.425){if(lane>.5&&lane<2.1)return false;if(lane>=2.1&&((f>.35&&f<.359)||(f>.39&&f<.399)))return false;}return true;}
+export function supported(r,s,lane){const f=fraction(r,s);const gaps=r.gaps??GAPS;if(Math.abs(lane)>4.65)return false;if(gaps.some(([a,b])=>f>a&&f<b))return false;if(r.shortcut!==false&&f>.315&&f<.425){if(lane>.5&&lane<2.1)return false;if(lane>=2.1&&((f>.35&&f<.359)||(f>.39&&f<.399)))return false;}return true;}
 function random(r){r.seed=(Math.imul(r.seed,1664525)+1013904223)>>>0;return r.seed/4294967296;}
 function runner(id,name,lane){return {id,name,s:0,lane,speed:0,y:0,vy:0,jumps:0,energy:100,dash:0,boost:0,shield:0,slow:0,spring:0,magnet:0,fall:0,lastSafe:0,inventory:[null,null],crystals:0,finish:null,ack:0,hitAt:-10,itemAt:7,aiJumpAt:-10};}
-export function createRace(length,difficulty=0,online=false,seed=812){return {length,difficulty,online,seed,phase:'countdown',countdown:3.2,time:0,tick:0,runners:[runner(0,online?'房主':'你',-1.8),runner(1,online?'朋友':'岚 · 电脑',1.8)],boxes:BOX_FRACTIONS.map((f,i)=>({s:f*length,lane:[-2.7,0,2.7,0][i%4],cool:0})),crystals:Array.from({length:72},(_,i)=>({s:((i+.5)/72)*length,lane:Math.sin(i*.7)*2.8,cool:0})),traps:[],bolts:[],events:[],eventId:0,winner:null};}
+export function createRace(length,difficulty=0,online=false,seed=812,map=BUILTIN_MAP){const course=normalizeMap(map);return {length,laps:course.laps,mapId:mapFingerprint(course),gaps:course.gaps,obstacles:course.obstacles,shortcut:course.shortcut,difficulty,online,seed,phase:'countdown',countdown:3.2,time:0,tick:0,runners:[runner(0,online?'房主':'你',-1.8),runner(1,online?'朋友':'岚 · 电脑',1.8)],boxes:course.boxes.map(([t,lane])=>({s:t*length,lane,cool:0})),crystals:Array.from({length:course.crystals},(_,i)=>({s:((i+.5)/course.crystals)*length,lane:Math.sin(i*.7)*2.8,cool:0})),traps:[],bolts:[],events:[],eventId:0,winner:null};}
 function emit(r,type,data={}){r.events.push({id:++r.eventId,type,t:r.time,...data});if(r.events.length>24)r.events.shift();}
 export function jump(r,id){const p=r.runners[id];if(r.phase!=='racing'||p.fall>0||p.finish!==null||p.jumps>=2)return false;p.vy=p.spring>0?15:p.jumps===0?10.3:9.2;p.jumps++;emit(r,'jump',{who:id});return true;}
 export function dash(r,id){const p=r.runners[id];if(r.phase!=='racing'||p.energy<35||p.dash>0||p.fall>0||p.finish!==null)return false;p.energy-=35;p.dash=.62;if(p.y>.1)p.vy=Math.max(p.vy,2.8);emit(r,'dash',{who:id});return true;}
@@ -30,7 +31,7 @@ export function useItem(r,id,slot){const p=r.runners[id],item=p.inventory[slot];
  if(item==='pulse'&&Math.abs(other.s-p.s)<16){hit(r,1-id,'pulse',id);}
  if(item==='spring'){p.spring=5;p.vy=15;p.jumps=1;}
  if(item==='magnet')p.magnet=8;
- if(item==='blink'){let next=p.s+16;for(let n=0;n<35&&!supported(r,next,0);n++)next++;p.s=Math.min(next,r.length*2-.1);p.y=Math.max(p.y,.7);p.vy=3;p.lane=0;}
+ if(item==='blink'){let next=p.s+16;for(let n=0;n<35&&!supported(r,next,0);n++)next++;p.s=Math.min(next,r.length*(r.laps||2)-.1);p.y=Math.max(p.y,.7);p.vy=3;p.lane=0;}
  emit(r,'item',{who:id,item});return true;
 }
 export function advanceRunner(r,p,input,dt){if(p.finish!==null)return;const f=fraction(r,p.s);for(const key of ['dash','boost','shield','slow','spring','magnet'])p[key]=Math.max(0,p[key]-dt);
@@ -38,22 +39,22 @@ export function advanceRunner(r,p,input,dt){if(p.finish!==null)return;const f=fr
  p.energy=clamp(p.energy+9*dt,0,100);p.lane=clamp(p.lane+clamp(input.side||0,-1,1)*8.2*dt,-5.9,5.9);
  const move=clamp(input.forward||0,0,1),target=move*(p.dash>0?32:p.boost>0?27:18.5)*(p.slow>0?.43:1);
  p.speed+=(target-p.speed)*(1-Math.exp(-dt*(target>p.speed?6:8)));
- const shortcut=f>.315&&f<.425&&p.lane>=2.1;
+ const shortcut=r.shortcut!==false&&f>.315&&f<.425&&p.lane>=2.1;
  p.s+=p.speed*dt*(shortcut?1.24:1);p.vy-=25*dt;p.y+=p.vy*dt;
  const ground=supported(r,p.s,p.lane);
  if(p.y<=0&&ground){p.y=0;p.vy=0;p.jumps=0;if(Math.abs(p.lane)<4.3)p.lastSafe=p.s;}
  if(p.y<-.65){p.fall=.8;emit(r,'fall',{who:p.id});}
- for(let i=0;i<OBSTACLES.length;i++){const d=Math.abs(near(p.s,OBSTACLES[i]*r.length,r.length)),lane=Math.sin(r.time*.9+i*1.7)*3.1;if(d<1.25&&Math.abs(p.lane-lane)<1.15&&p.y<1.1)hit(r,p.id,'bar',null);}
- if(p.s>=r.length*2){p.s=r.length*2;p.finish=r.time;p.speed=0;if(r.winner===null)r.winner=p.id;emit(r,'finish',{who:p.id});}
+ for(let i=0;i<r.obstacles.length;i++){const o=r.obstacles[i],d=Math.abs(near(p.s,o.t*r.length,r.length)),lane=obstacleLane(r,o,i);if(d<1.25&&Math.abs(p.lane-lane)<1.15&&p.y<1.1)hit(r,p.id,'bar',null);}
+ if(p.s>=r.length*(r.laps||2)){p.s=r.length*(r.laps||2);p.finish=r.time;p.speed=0;if(r.winner===null)r.winner=p.id;emit(r,'finish',{who:p.id});}
 }
 function aiInput(r,p,dt){const other=r.runners[0],f=fraction(r,p.s);let targetLane=Math.sin(r.time*.48)*2.2;
  const nextBox=r.boxes.find(b=>b.cool<=0&&near(b.s,p.s,r.length)>0&&near(b.s,p.s,r.length)<22);if(nextBox&&p.inventory.includes(null))targetLane=nextBox.lane;
- if(f>.295&&f<.43)targetLane=r.difficulty===2?3.2:-2;
+ if(r.shortcut!==false&&f>.295&&f<.43)targetLane=r.difficulty===2?3.2:-2;
  if(f>.43&&f<.46)targetLane=-2;
  const side=clamp((targetLane-p.lane)*1.6,-1,1);
- const aheadGap=GAPS.some(([a,b])=>f>a-8/r.length&&f<b);
- const sideGap=p.lane>2.1&&((f>.35-8/r.length&&f<.359)||(f>.39-8/r.length&&f<.399));
- const aheadBar=OBSTACLES.some(g=>near(g*r.length,p.s,r.length)>0&&near(g*r.length,p.s,r.length)<7);
+ const aheadGap=r.gaps.some(([a,b])=>f>a-8/r.length&&f<b);
+ const sideGap=r.shortcut!==false&&p.lane>2.1&&((f>.35-8/r.length&&f<.359)||(f>.39-8/r.length&&f<.399));
+ const aheadBar=r.obstacles.some(g=>near(g.t*r.length,p.s,r.length)>0&&near(g.t*r.length,p.s,r.length)<7);
  if((aheadGap||sideGap||aheadBar)&&p.y===0&&r.time-p.aiJumpAt>.7){jump(r,1);p.aiJumpAt=r.time;}
  if(p.energy>=65&&p.y===0&&f<.95&&supported(r,p.s+15,p.lane))dash(r,1);
  if(r.bolts.some(b=>b.target===1&&b.delay<.65)&&p.y===0&&r.difficulty>0)jump(r,1);
@@ -71,6 +72,8 @@ export function stepRace(r,inputs,dt){dt=clamp(dt,0,.05);if(r.phase==='finished'
  r.traps=r.traps.filter(t=>t.life>0);for(const b of r.bolts){b.delay-=dt;if(b.delay<=0){const p=r.runners[b.target];if(Math.abs(p.lane-b.lane)<1.7&&p.y<1.7)hit(r,p.id,'bolt',b.from);else emit(r,'dodge',{who:p.id});}}
  r.bolts=r.bolts.filter(b=>b.delay>0);if(r.runners.every(p=>p.finish!==null))r.phase='finished';
 }
-export function raceSnapshot(r){return {phase:r.phase,countdown:r.countdown,time:r.time,tick:r.tick,runners:r.runners.map(p=>({...p,inventory:[...p.inventory]})),boxes:r.boxes.map(b=>({...b})),crystals:r.crystals.map(c=>({...c})),traps:r.traps.map(t=>({...t})),bolts:r.bolts.map(b=>({...b})),events:r.events.map(e=>({...e})),eventId:r.eventId,winner:r.winner,seed:r.seed};}
-export function applySnapshot(r,s){if(!s||!Array.isArray(s.runners)||s.runners.length!==2||!Number.isFinite(s.time)||!Number.isFinite(s.tick)||s.tick<r.tick)return false;if(s.runners.some(p=>!Number.isFinite(p.s)||!Number.isFinite(p.lane)||!Number.isFinite(p.y)||!Array.isArray(p.inventory)))return false;Object.assign(r,s);return true;}
+export function raceSnapshot(r){return {mapId:r.mapId,laps:r.laps,phase:r.phase,countdown:r.countdown,time:r.time,tick:r.tick,runners:r.runners.map(p=>({...p,inventory:[...p.inventory]})),boxes:r.boxes.map(b=>({...b})),crystals:r.crystals.map(c=>({...c})),traps:r.traps.map(t=>({...t})),bolts:r.bolts.map(b=>({...b})),events:r.events.map(e=>({...e})),eventId:r.eventId,winner:r.winner,seed:r.seed};}
+export function applySnapshot(r,s){if(!s||s.mapId!==r.mapId||!Array.isArray(s.runners)||s.runners.length!==2||!Number.isFinite(s.time)||!Number.isFinite(s.tick)||s.tick<r.tick)return false;if(s.runners.some(p=>!Number.isFinite(p.s)||!Number.isFinite(p.lane)||!Number.isFinite(p.y)||!Array.isArray(p.inventory)))return false;Object.assign(r,s);return true;}
 export function predictRunner(r,p,input,dt){advanceRunner({...r,runners:r.runners.map((v,i)=>i===p.id?p:{...v}),events:[],eventId:0},p,input,dt);}
+
+export function obstacleLane(r,o,index){return o.moving?Math.sin(r.time*.9+index*1.7)*3.1:o.lane;}
