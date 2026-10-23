@@ -11,7 +11,7 @@ export function createWorld(canvas){
  const materials=new Map();function mat(color,emissive=false){const key=color+emissive;if(!materials.has(key))materials.set(key,new T.MeshStandardMaterial({color,roughness:.85,metalness:emissive?.2:0,...(emissive?{emissive:color,emissiveIntensity:.25}:{})}));return materials.get(key);}
  function mesh(group,geom,color,pos,scale,rot){const m=new T.Mesh(typeof geom==='string'?geoms[geom]:geom,mat(color));m.position.set(...pos);m.scale.set(...scale);if(rot)m.rotation.set(...rot);group.add(m);return m;}
  const clouds=new T.Group();scene.add(clouds);for(let i=0;i<28;i++){const a=i*2.399,r=95+(i%4)*40;mesh(clouds,'ball','#eff7ed',[Math.cos(a)*r,-18-(i%5)*5,Math.sin(a)*r],[18+i%9,4,9]);}
- const meshes=new Map(),animated=[];
+ const meshes=new Map(),animated=[],runtimeHidden=new Set();
  function makeObject(o){const g=new T.Group(),[w,h,d]=o.size;g.position.set(...o.pos);g.rotation.y=o.yaw*Math.PI/180;g.userData.objectId=o.id;
   const box=(col,x,y,z,sx,sy,sz)=>mesh(g,'box',col,[x,y,z],[sx,sy,sz]);
   if(['ground','block','wall','rock','water','bounce','hazard'].includes(o.type)){
@@ -43,9 +43,9 @@ export function createWorld(canvas){
    mesh(g,'cylinder',o.color,[0,0,0],[w*.5,h,d*.5]);mesh(g,'ring','#fff0c2',[0,h/2+.04,0],[w*.4,d*.4,1],[Math.PI/2,0,0]);mesh(g,'cone','#fff6d7',[0,h/2+.12,d*.15],[w*.18,.09,d*.27],[Math.PI/2,0,0]);
   }
   if(['house','tower','tree','arch','rock'].includes(o.type)){const shadow=new T.Mesh(geoms.disk,shadowMaterial);shadow.position.y=-h/2+.035;shadow.rotation.x=-Math.PI/2;shadow.scale.set(w*.62,d*.62,1);g.add(shadow);}
-  root.add(g);meshes.set(o.id,g);return g;
+  g.userData.originalColor=o.color;g.traverse(m=>{if(m.isMesh)m.userData.originalMaterial=m.material;});root.add(g);meshes.set(o.id,g);return g;
  }
- function clear(){root.traverse(m=>{if(m.geometry&&!Object.values(geoms).includes(m.geometry))m.geometry.dispose();});root.clear();meshes.clear();animated.length=0;}
+ function clear(){root.traverse(m=>{if(m.geometry&&!Object.values(geoms).includes(m.geometry))m.geometry.dispose();});root.clear();meshes.clear();animated.length=0;runtimeHidden.clear();}
  function build(map){clear();for(const o of map.objects)makeObject(o);scene.background=new T.Color(THEMES[map.theme].sky);scene.fog.color.set(THEMES[map.theme].fog);sun.color.set(THEMES[map.theme].sun);}
  const player=new T.Group();scene.add(player);player.visible=false;const playerShadow=new T.Mesh(geoms.disk,shadowMaterial);playerShadow.rotation.x=-Math.PI/2;playerShadow.scale.set(.5,.36,1);scene.add(playerShadow);playerShadow.visible=false;
  mesh(player,'cylinder','#163e51',[0,.94,0],[.25,.48,.18]);mesh(player,'ball','#f3d8bd',[0,1.48,0],[.23,.26,.22]);mesh(player,'ball','#e4eae3',[0,1.64,-.025],[.25,.18,.23]);
@@ -57,11 +57,12 @@ export function createWorld(canvas){
  function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
  function select(id){const g=meshes.get(id);selection.visible=!!g;if(g)selection.box.setFromObject(g);}
  const ray=new T.Raycaster(),v2=new T.Vector2();function rayAt(x,y){const r=canvas.getBoundingClientRect();v2.set((x-r.x)/r.width*2-1,-(y-r.y)/r.height*2+1);camera.updateMatrixWorld();ray.setFromCamera(v2,camera);return ray;}
- function pick(x,y){const hits=rayAt(x,y).intersectObjects(root.children,true);if(!hits.length)return null;let g=hits[0].object;while(g&&!g.userData.objectId)g=g.parent;return {id:g?.userData.objectId,point:hits[0].point,normal:hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld)};}
+ function pick(x,y){root.updateMatrixWorld(true);const hits=rayAt(x,y).intersectObjects(root.children,true);if(!hits.length)return null;let g=hits[0].object;while(g&&!g.userData.objectId)g=g.parent;return {id:g?.userData.objectId,point:hits[0].point,normal:hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld)};}
  function planePoint(x,y,height=0){const point=new T.Vector3();return rayAt(x,y).ray.intersectPlane(new T.Plane(new T.Vector3(0,1,0),-height),point);}
- function project(pos){const p=new T.Vector3(...pos).project(camera),r=canvas.getBoundingClientRect();return {x:r.x+(p.x+1)*r.width/2,y:r.y+(1-p.y)*r.height/2,visible:p.z<1};}
+ function project(pos){camera.updateMatrixWorld(true);const p=new T.Vector3(...pos).project(camera),r=canvas.getBoundingClientRect();return {x:r.x+(p.x+1)*r.width/2,y:r.y+(1-p.y)*r.height/2,visible:p.z<1};}
  function updatePlayer(p,t){player.visible=!!p;playerShadow.visible=!!p&&p.grounded;if(!p)return;player.position.set(p.x,p.y,p.z);playerShadow.position.set(p.x,p.y+.03,p.z);player.rotation.y=p.yaw;const speed=Math.hypot(p.vx,p.vz),cycle=t*speed*1.6;legs.forEach((g,i)=>g.rotation.x=p.grounded?Math.sin(cycle+i*Math.PI)*Math.min(.85,speed*.09):i?-.45:.6);arms.forEach((g,i)=>g.rotation.x=p.grounded?-Math.sin(cycle+i*Math.PI)*Math.min(.7,speed*.07):-.7);scarf.rotation.x=-.2-speed*.025;}
- function render(t,p){for(const a of animated){a.gem.rotation.y=t*.9;a.gem.position.y=Math.sin(t*2+a.id.length)*.12;const g=meshes.get(a.id);if(g)g.visible=!p?.collected.includes(a.id);}renderer.render(scene,camera);}
+ function applyRuntime(map){runtimeHidden.clear();for(const o of map.objects){const g=meshes.get(o.id);if(!g)continue;g.position.set(...o.pos);g.rotation.y=o.yaw*Math.PI/180;g.visible=o.visible!==false;if(!g.visible)runtimeHidden.add(o.id);if(g.userData.appliedColor!==o.color){g.traverse(m=>{if(m.isMesh&&m.material!==shadowMaterial)m.material=o.color===g.userData.originalColor?m.userData.originalMaterial:mat(o.color);});g.userData.appliedColor=o.color;}}}
+ function render(t,p){for(const a of animated){a.gem.rotation.y=t*.9;a.gem.position.y=Math.sin(t*2+a.id.length)*.12;const g=meshes.get(a.id);if(g)g.visible=!runtimeHidden.has(a.id)&&!p?.collected.includes(a.id);}renderer.render(scene,camera);}
  function dispose(){clear();for(const g of Object.values(geoms))g.dispose();for(const m of materials.values())m.dispose();shadowMaterial.dispose();renderer.dispose();}
- resize();cameraOrbit();return {renderer,scene,camera,orbit,grid,selection,meshes,build,resize,select,pick,planePoint,project,cameraOrbit,updatePlayer,render,dispose};
+ resize();cameraOrbit();return {renderer,scene,camera,orbit,grid,selection,meshes,build,resize,select,pick,planePoint,project,cameraOrbit,updatePlayer,applyRuntime,render,dispose};
 }

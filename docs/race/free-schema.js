@@ -1,3 +1,4 @@
+import {normalizePrograms,countBlocks,PROGRAM_LIMITS,programPreset} from './program-schema.js';
 export const LIMIT=160;
 export const TYPES={
  ground:{name:'地块',category:'地形',size:[20,2,20],color:'#c2dbc4'},
@@ -23,16 +24,18 @@ export function uid(){return Math.random().toString(36).slice(2,10)+Date.now().t
 export function object(type,x=0,y=0,z=0,size){return {id:uid(),type,pos:[x,y,z],size:[...(size||TYPES[type].size)],yaw:0,color:TYPES[type].color};}
 export function clone(value){return JSON.parse(JSON.stringify(value));}
 export function normalize(input){
- if(!input||input.kind!=='freeworld'||input.version!==1)throw Error('请选择自由地图文件（.windworld.json），赛道文件请在赛道编辑器打开。');
+ if(!input||input.kind!=='freeworld'||![1,2].includes(input.version))throw Error('请选择自由地图文件（.windworld.json），赛道文件请在赛道编辑器打开。');
  if(!Array.isArray(input.objects)||input.objects.length>LIMIT||input.objects.length<1)throw Error(`地图需要 1–${LIMIT} 个物体。`);
  const ids=new Set();const objects=input.objects.map(o=>{
-  if(!TYPES[o.type])throw Error('地图包含不支持的物体。');
+  if(!o||!Object.hasOwn(TYPES,o.type))throw Error('地图包含不支持的物体。');
   const vector=(v,min,max,label)=>{if(!Array.isArray(v)||v.length!==3||v.some(n=>typeof n!=='number'||!Number.isFinite(n)||n<min||n>max))throw Error(label+'超出范围。');return v.map(n=>Math.round(n*100)/100);};
   const id=typeof o.id==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.test(o.id)?o.id:uid();if(ids.has(id))throw Error('地图物体编号重复。');ids.add(id);
-  return {id,type:o.type,pos:vector(o.pos,-300,300,'位置'),size:vector(o.size,.2,100,'大小'),yaw:typeof o.yaw==='number'&&Number.isFinite(o.yaw)?Math.round(((o.yaw%360)+360)%360):0,color:/^#[0-9a-f]{6}$/i.test(o.color)?o.color:TYPES[o.type].color};
+  const result={id,type:o.type,pos:vector(o.pos,-300,300,'位置'),size:vector(o.size,.2,100,'大小'),yaw:typeof o.yaw==='number'&&Number.isFinite(o.yaw)?Math.round(((o.yaw%360)+360)%360):0,color:/^#[0-9a-f]{6}$/i.test(o.color)?o.color:TYPES[o.type].color};
+  if(typeof o.label==='string'&&o.label.trim())result.label=o.label.trim().slice(0,24);if(o.program!==undefined){const program=normalizePrograms(o.program);if(program.length)result.program=program;}return result;
  });
  if(objects.filter(o=>o.type==='spawn').length!==1)throw Error('地图必须有且只有一个出生点。');
- return {kind:'freeworld',version:1,name:String(input.name||'我的自由地图').slice(0,32),author:String(input.author||'群岛建造师').slice(0,24),theme:THEMES[input.theme]?input.theme:'garden',objects};
+ const programs=objects.flatMap(o=>o.program||[]);if(programs.length>PROGRAM_LIMITS.rules||countBlocks(programs)>PROGRAM_LIMITS.blocks)throw Error('整张地图最多放 48 组事件、384 块积木。');
+ return {kind:'freeworld',version:programs.length?2:1,name:String(input.name||'我的自由地图').slice(0,32),author:String(input.author||'群岛建造师').slice(0,24),theme:Object.hasOwn(THEMES,input.theme)?input.theme:'garden',objects};
 }
 export function fingerprint(map){let h=2166136261;for(const c of JSON.stringify(normalize(map))){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
 export function encode(map){const bytes=new TextEncoder().encode(JSON.stringify(normalize(map)));let str='';for(const b of bytes)str+=String.fromCharCode(b);return btoa(str).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');}
@@ -54,6 +57,12 @@ export function template(name='village'){
   title='薄荷迷宫';objects[0].size=[40,2,40];objects[1].pos=[-16,.16,16];
   for(const [x,z,w,d]of[[0,-20,40,1],[0,20,40,1],[-20,0,1,40],[20,0,1,40],[-10,3,1,26],[0,-3,1,26],[10,3,1,26],[-15,-10,10,1],[5,10,10,1]])add('wall',x,2.5,z,[w,5,d]);
   add('finish',16,2.5,-16);for(const [x,z]of[[-15,-3],[-5,-15],[5,15],[15,0]])add('crystal',x,1.8,z);
+ }else if(name==='logic'){
+  title='积木机关 · 风之实验场';objects[0].size=[30,2,30];objects[1].pos=[0,.16,9];
+  const key=add('crystal',-5,1.2,5);key.label='风之钥匙';key.program=[programPreset('key')];
+  const door=add('wall',0,2.5,-4,[6,5,1]);door.label='钥匙机关门';door.color='#d5bb76';door.program=normalizePrograms([{id:'door',event:{type:'interact',radius:4},steps:[{op:'if',test:'variable',name:'钥匙',cmp:'gte',value:1,then:[{op:'if',test:'variable',name:'门已打开',cmp:'eq',value:0,then:[{op:'move',y:5,seconds:1.2},{op:'set',name:'门已打开',value:1},{op:'message',text:'门已经打开，继续向前吧！'}],else:[{op:'message',text:'门已经打开啦。'}]}],else:[{op:'message',text:'先去左边找到一把钥匙。'}]}]}]);
+  add('wall',-10,2.5,-4,[14,5,1]);add('wall',10,2.5,-4,[14,5,1]);const platform=add('block',7,1.2,2,[5,.7,5]);platform.label='往返升降台';platform.program=[programPreset('platform')];
+  const sign=add('arch',-8,3.5,10);sign.label='庭院路牌';sign.program=[programPreset('sign')];add('finish',0,2.5,-11);add('tree',-11,3.5,-10);
  }else if(name==='islands'){
   title='无路之岛';objects[0].size=[18,2,18];objects[1].pos=[0,.16,6];
   for(let i=0;i<5;i++)add('block',Math.sin(i*1.3)*9,1+i*1.4,-16-i*9,[8,1,7]);add('finish',Math.sin(5.2)*9,9.6,-52);add('bounce',0,.2,-5);
