@@ -1,0 +1,21 @@
+import {mapsAPI,creatorKey,CATEGORIES,playURL,editURL} from './gallery-api.js';
+export function publisher({getMap,getPublication,setPublication,setMetadata,capture,dialog,toast}){
+ return async function publish(){
+  const body=document.createElement('div');body.innerHTML='<p id="publish-status" role="status">正在连接地图大厅…</p><form id="publish-form" hidden><img id="publish-preview" alt="将发布的地图预览"><div class="publish-fields"><label>地图名称<input id="publish-name" required maxlength="32"></label><label>作者称呼<input id="publish-author" required maxlength="24"></label></div><label>地图类型<select id="publish-category"></select></label><label>介绍这张地图<textarea id="publish-description" maxlength="200" rows="3" placeholder="有什么风景、挑战或秘密？给来访玩家一点提示。"></textarea></label><p id="publish-mode"></p><p class="publish-note">公开发布后，所有玩家都能在地图大厅看到并直接单人试玩。发布身份保存在这个浏览器；清除浏览器数据后将无法更新或下架旧作品。</p><button id="confirm-publish" class="primary" type="submit">发布到所有玩家的地图大厅 ↗</button></form><div id="publish-success" hidden><span>✦</span><h3>你的世界，已经有人能抵达。</h3><p>地图已保存在服务器，其他玩家打开地图大厅就能找到它。</p><div class="dialog-row"><a id="published-hall" class="hall-link" href="./gallery.html?mine=1">去大厅看我的地图 ↗</a><a id="published-play" class="hall-link">立即试玩</a></div></div>';
+  dialog('把你的世界，放进地图大厅。',body);
+  const find=s=>body.querySelector(s),status=find('#publish-status');let key,mine,current,requestId=crypto.randomUUID(),attempt=null,busy=false,thumbnail=null;
+  try{key=creatorKey(true);mine=(await mapsAPI({action:'mine',key})).items;if(!body.isConnected)return;const p=getPublication();current=p?mine.find(m=>m.id===p.id):null;
+   if(current&&p.revision!==current.revision){status.textContent='大厅里的这张地图已更新。为避免覆盖其他版本，请先打开最新版再改建。';const a=document.createElement('a');a.href=editURL(p.id);a.textContent=' 打开最新地图 ↗';status.append(a);return;}
+   const map=getMap();find('#publish-name').value=map.name;find('#publish-author').value=map.author;for(const [id,name]of Object.entries(CATEGORIES)){if(id==='all')continue;const option=document.createElement('option');option.value=id;option.textContent=name;find('#publish-category').append(option);}find('#publish-category').value=current?.category||'explore';find('#publish-description').value=current?.description||'';thumbnail=capture();find('#publish-preview').hidden=!thumbnail;if(thumbnail)find('#publish-preview').src=thumbnail;find('#publish-mode').textContent=current?'将更新你已经发布的地图，保留原来的地图链接。':p?'这张地图将作为你的改建作品发布，不会覆盖原作者的地图。':'地图将公开出现在大厅中；其他玩家不需要复制地图文件。';find('#confirm-publish').textContent=current?'更新大厅中的这张地图 ↗':'公开发布到地图大厅 ↗';status.hidden=true;find('#publish-form').hidden=false;
+  }catch(e){status.textContent=e.message;const retry=document.createElement('button');retry.type='button';retry.textContent='重新连接';retry.onclick=publish;status.append(document.createElement('br'),retry);return;}
+  find('#publish-form').onsubmit=async e=>{
+   e.preventDefault();if(busy)return;const name=find('#publish-name').value.trim(),author=find('#publish-author').value.trim();if(!name||!author){status.hidden=false;status.textContent='请填写地图名称和作者称呼。';return;}
+   busy=true;const button=find('#confirm-publish');button.disabled=true;button.textContent=current?'正在更新…':'正在发布…';status.hidden=false;status.textContent='正在保存到所有玩家共用的地图大厅…';
+   for(const input of body.querySelectorAll('input,textarea,select'))input.disabled=true;
+   try{if(!attempt){setMetadata({name,author});attempt={action:current?'update':'publish',key,requestId,map:getMap(),description:find('#publish-description').value,category:find('#publish-category').value,thumbnail,...(current?{id:current.id,revision:current.revision}:{})};}
+    const result=await mapsAPI(attempt,{timeout:18000});setPublication({id:result.item.id,revision:result.item.revision});if(!body.isConnected)return;find('#publish-form').hidden=true;status.hidden=true;find('#publish-success').hidden=false;find('#published-play').href=playURL(result.item.id);toast(current?'大厅地图已更新。':'地图已发布，所有玩家都可以从大厅进入。');
+   }catch(error){if(!body.isConnected)return;status.textContent=error.message+(error.status?'':' 发布结果暂未确认，可以重试，或到“我的发布”检查。');button.textContent=error.status?'重新发布 ↗':'重试同一次发布 ↗';if(error.status){attempt=null;requestId=crypto.randomUUID();for(const input of body.querySelectorAll('input,textarea,select'))input.disabled=false;}}
+   finally{busy=false;button.disabled=false;}
+  };
+ };
+}
